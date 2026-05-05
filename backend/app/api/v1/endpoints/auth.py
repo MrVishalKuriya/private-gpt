@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.redis import check_rate_limit, clear_rate_limit
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
-from app.schemas.token import RefreshRequest, Token, TokenPayload
+from app.schemas.token import RefreshRequest, Token
 from app.schemas.user import UserCreate, UserResponse
 
 router = APIRouter()

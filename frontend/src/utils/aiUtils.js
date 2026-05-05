@@ -12,7 +12,35 @@ export const knowledgeBase = {
   fresher: "**Fresher's Talent Transformation Programme:**\n\n• Bridge the gap from campus to corporate\n• Essential technical & soft skills training\n• Hands-on projects & real-world simulations\n• Mentorship from industry experts\n• Corporate communication & professional etiquette\n\nDesigned to make fresh graduates workplace-ready from day one."
 };
 
-export const getAIResponse = (query) => {
+const API_BASE_URL = 'http://localhost:8000/api/v1';
+
+export const getAIResponse = async (query, token) => {
+  // 1. Try to get response from real backend
+  if (token) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/chat/ask`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ question: query }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return { 
+          text: data.answer, 
+          suggestions: ["Tell me more", "How to enrol?", "Available programmes"],
+          fromBackend: true 
+        };
+      }
+    } catch (error) {
+      console.warn("Backend chat failed, falling back to local knowledge base", error);
+    }
+  }
+
+  // 2. Fallback to local knowledge base (Mock logic)
   const lower = query.toLowerCase();
   let text;
   let suggestions;
@@ -52,5 +80,5 @@ export const getAIResponse = (query) => {
     suggestions = ["Available programmes", "Gen AI Academy", "Fee structure"];
   }
 
-  return { text, suggestions };
+  return { text, suggestions, fromBackend: false };
 };

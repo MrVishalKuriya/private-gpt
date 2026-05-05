@@ -41,7 +41,7 @@ const Typewriter = ({ text, onComplete }) => {
 };
 
 const RightSidebarAI = () => {
-  const { aiSidebarOpen, setAiSidebarOpen } = useAuth();
+  const { aiSidebarOpen, setAiSidebarOpen, user } = useAuth();
   const [messages, setMessages] = useState([
     { role: 'ai', text: "Hi! I'm Regenesys PrivateGPT. I can answer questions about our programmes, admissions, fees, course content, and career outcomes. How can I help you today?", isAnimated: true }
   ]);
@@ -55,7 +55,7 @@ const RightSidebarAI = () => {
     }
   }, [messages, isTyping]);
 
-  const handleSend = (text) => {
+  const handleSend = async (text) => {
     const msg = typeof text === 'string' ? text : input;
     if (!msg.trim() || isTyping) return;
 
@@ -64,18 +64,24 @@ const RightSidebarAI = () => {
     setInput('');
     setIsTyping(true);
 
-    // Get response from shared utility
-    const { text: aiResponse } = getAIResponse(msg);
+    try {
+      // Get response from shared utility (now async)
+      const { text: aiResponse } = await getAIResponse(msg, user?.token);
 
-    // Simulate thinking delay
-    setTimeout(() => {
       setIsTyping(false);
       setMessages(prev => [...prev, { 
         role: 'ai', 
         text: aiResponse,
         isAnimated: false
       }]);
-    }, 1200);
+    } catch (error) {
+      setIsTyping(false);
+      setMessages(prev => [...prev, { 
+        role: 'ai', 
+        text: "I'm sorry, I'm having trouble connecting to the server. Please try again later.",
+        isAnimated: true
+      }]);
+    }
   };
 
   const markAsAnimated = (index) => {

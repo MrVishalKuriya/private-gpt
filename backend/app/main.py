@@ -1,17 +1,21 @@
 import logging
-import sentry_sdk
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.api import api_router
 from app.core.config import settings
-from app.core.middleware import SecurityHeadersMiddleware, RequestIDMiddleware, GlobalRateLimitMiddleware
 from app.core.logging_config import setup_logging
-from app.db.session import engine
-from app.db.neo4j import ping_neo4j, close_neo4j_driver, get_neo4j_driver
+from app.core.middleware import (
+    GlobalRateLimitMiddleware,
+    RequestIDMiddleware,
+    SecurityHeadersMiddleware,
+)
 from app.core.redis import redis_client
+from app.db.neo4j import close_neo4j_driver, get_neo4j_driver, ping_neo4j
+from app.db.session import engine
 
 # Initialize Production Logging
 setup_logging()
@@ -26,6 +30,7 @@ if settings.SENTRY_DSN:
         profiles_sample_rate=1.0,
     )
     logger.info("Sentry initialized")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -61,7 +66,9 @@ async def lifespan(app: FastAPI):
 
     # 4. Gemini Key Check
     if not settings.GEMINI_API_KEY or "your_gemini_api_key" in settings.GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY is missing or invalid. AI features will fail or run in mocked mode.")
+        logger.warning(
+            "GEMINI_API_KEY is missing or invalid. AI features will fail or run in mocked mode."
+        )
 
     yield
 
@@ -72,10 +79,11 @@ async def lifespan(app: FastAPI):
     await redis_client.aclose()
     await close_neo4j_driver()
 
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Add Request Tracking and Security Middlewares
@@ -118,11 +126,14 @@ async def health_deep_check():
 
     neo4j_status = "ok" if await ping_neo4j() else "error"
 
-    status = "ok" if db_status == "ok" and redis_status == "ok" and neo4j_status == "ok" else "error"
+    status = (
+        "ok"
+        if db_status == "ok" and redis_status == "ok" and neo4j_status == "ok"
+        else "error"
+    )
     return {
         "status": status,
         "database": db_status,
         "redis": redis_status,
         "neo4j": neo4j_status,
     }
-

@@ -40,18 +40,21 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
       - name: Install dependencies
         working-directory: backend
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+        run: uv sync
 
       - name: Run Linters
         working-directory: backend
         run: |
-          ruff check app
-          isort --check app
-          black --check app
+          uv run ruff check app
+          uv run isort --check app
+          uv run black --check app
 
       - name: Run Pytest
         working-directory: backend
@@ -61,11 +64,14 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: app_db
           REDIS_URL: redis://localhost:6379/0
+          NEO4J_URI: bolt://localhost:7687
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: password
           SECRET_KEY: test_secret_key_needs_to_be_32_characters
           ENVIRONMENT: test
         run: |
-          alembic upgrade head
-          pytest app/tests/ -v
+          uv run alembic upgrade head
+          uv run pytest -v
 
   docker-build:
     runs-on: ubuntu-latest

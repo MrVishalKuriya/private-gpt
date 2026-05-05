@@ -1,62 +1,32 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState } from 'react';
 
 const AuthContext = createContext(null);
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(() => {
+    const stored = typeof window !== 'undefined' ? localStorage.getItem('regenesys_user') : null;
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch {
+        localStorage.removeItem('regenesys_user');
+      }
+    }
+  });
+
   const [aiSidebarOpen, setAiSidebarOpen] = useState(false);
 
-  // Restore session on mount
-  useEffect(() => {
-    const initAuth = async () => {
-      const token = localStorage.getItem('regenesys_token');
-      if (token) {
-        try {
-          const response = await fetch(`${API_BASE_URL}/profile/me`, {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
-          if (response.ok) {
-            const profile = await response.json();
-            setUser({
-              id: profile.id,
-              name: profile.full_name || profile.email?.split('@')[0] || 'User',
-              email: profile.email,
-              avatar: profile.avatar_url || (profile.full_name ? profile.full_name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U')
-            });
-          } else {
-            // Token expired or invalid
-            localStorage.removeItem('regenesys_token');
-            localStorage.removeItem('regenesys_refresh_token');
-          }
-        } catch (error) {
-          console.error('Failed to restore session:', error);
-        }
-      }
-      setLoading(false);
-    };
-    initAuth();
-  }, []);
-
-  const checkEmail = async (email) => {
-    // Note: Backend might need a dedicated check-email endpoint for better UX
-    // For now, we simulate success or use register's logic
-    return false; 
-  };
+  const API_BASE_URL = 'http://localhost:8000/api/v1';
 
   const signup = async (name, email, password) => {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password, full_name: name }),
       });
 
       const data = await response.json();
@@ -65,63 +35,74 @@ export const AuthProvider = ({ children }) => {
         return { success: false, error: data.detail || 'Signup failed' };
       }
 
-      // If signup successful, we can optionally create the profile immediately
-      // or just log them in
+      // After signup, we log them in automatically
       return await login(email, password);
     } catch (error) {
-      return { success: false, error: 'Could not connect to authentication server.' };
+      return { success: false, error: 'Connection to server failed' };
     }
   };
 
   const login = async (email, password) => {
     try {
-      const formData = new URLSearchParams();
+      const formData = new FormData();
       formData.append('username', email);
       formData.append('password', password);
 
       const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData
+        body: formData, // OAuth2PasswordRequestForm expects form-data
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        return { success: false, error: data.detail || 'Invalid email or password.' };
+        return { success: false, error: data.detail || 'Login failed' };
       }
 
-      localStorage.setItem('regenesys_token', data.access_token);
-      localStorage.setItem('regenesys_refresh_token', data.refresh_token);
-
-      // Fetch profile
+      // Get user profile info after login
       const profileResponse = await fetch(`${API_BASE_URL}/profile/me`, {
-        headers: { 'Authorization': `Bearer ${data.access_token}` }
+        headers: { 'Authorization': `Bearer ${data.access_token}` },
       });
-      
-      const profile = await profileResponse.json();
+      const profileData = await profileResponse.json();
+
       const sessionUser = {
-        id: profile.id,
-        name: profile.full_name || email.split('@')[0],
-        email: email,
-        avatar: profile.avatar_url || (profile.full_name ? profile.full_name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U')
+        ...profileData,
+        token: data.access_token,
+        refreshToken: data.refresh_token,
+        avatar: (profileData.full_name || email).split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
       };
 
       setUser(sessionUser);
+      localStorage.setItem('regenesys_user', JSON.stringify(sessionUser));
+
       return { success: true };
     } catch (error) {
-      return { success: false, error: 'Connection error. Please try again later.' };
+      return { success: false, error: 'Connection to server failed' };
     }
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('regenesys_token');
-    localStorage.removeItem('regenesys_refresh_token');
+  const logout = async () => {
+    try {
+      if (user?.token) {
+        await fetch(`${API_BASE_URL}/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${user.token}`
+          },
+          body: JSON.stringify({ refresh_token: user.refreshToken }),
+        });
+      }
+    } catch (e) {
+      console.error('Logout error:', e);
+    } finally {
+      setUser(null);
+      localStorage.removeItem('regenesys_user');
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, aiSidebarOpen, setAiSidebarOpen, checkEmail, loading }}>
+    <AuthContext.Provider value={{ user, login, signup, logout, aiSidebarOpen, setAiSidebarOpen, checkEmail }}>
       {children}
     </AuthContext.Provider>
   );
