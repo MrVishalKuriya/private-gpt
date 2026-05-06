@@ -10,7 +10,6 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { getAIResponse } from '../utils/aiUtils';
-import { getFrontendAIResponse, fileToBase64, fileToText } from '../utils/frontendAI';
 import api from '../api';
 
 const GeminiIcon = ({ className = "w-5 h-5" }) => (
@@ -20,7 +19,7 @@ const GeminiIcon = ({ className = "w-5 h-5" }) => (
 );
 
 const PrivateGPTPage = () => {
-  const { user, logout, setLocalDocContents, localDocContents } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const isAdmin = user?.email === 'admin@regenesys.com';
   
@@ -180,16 +179,6 @@ const PrivateGPTPage = () => {
       const formData = new FormData();
       formData.append('file', file);
 
-      // --- Frontend Fallback Logic: Read file content ---
-      let docData = { name: file.name, mimeType: file.type };
-      if (file.type === "application/pdf") {
-        docData.base64 = await fileToBase64(file);
-      } else {
-        docData.textContent = await fileToText(file);
-      }
-      setLocalDocContents(prev => [...prev, docData]);
-      // ------------------------------------------------
-
       const response = await api.post('/documents/upload', formData, {
         headers: {
           'Content-Type': undefined
@@ -261,33 +250,24 @@ const PrivateGPTPage = () => {
     setInput('');
     setIsTyping(true);
 
-    // 1. Try Backend RAG first
-    let response, suggestions, sessionId, aiSources;
+    // 1. Backend RAG call
+    let response = "I encountered an error processing your request. Please check your backend connection.";
+    let suggestions = [];
+    let sessionId = null;
+    let aiSources = [];
+
     try {
       const isValidUUID = activeConvId?.length === 36;
       const backendRes = await getAIResponse(msg, isValidUUID ? activeConvId : null);
-      response = backendRes.text;
-      suggestions = backendRes.suggestions;
-      sessionId = backendRes.sessionId;
-      aiSources = backendRes.sources;
+      response = backendRes.text || response;
+      suggestions = backendRes.suggestions || [];
+      sessionId = backendRes.sessionId || null;
+      aiSources = backendRes.sources || [];
     } catch (err) {
-      console.warn("Backend AI failed, trying frontend fallback...");
+      console.error("Backend AI failed:", err);
+      response = "Backend connection failed. Please ensure the server is running on localhost:8000.";
     }
 
-    // 2. Fallback to Frontend AI if backend failed, returned no sources, or said "No relevant answer"
-    const isNoAnswer = response?.includes("No relevant answer found");
-    const backendFoundNoContext = !aiSources || aiSources.length === 0;
-
-    if ((!response || isNoAnswer || backendFoundNoContext) && localDocContents?.length > 0) {
-      try {
-        const frontendRes = await getFrontendAIResponse(msg, localDocContents);
-        response = frontendRes.text;
-        aiSources = frontendRes.sources?.map(name => ({ filename: name }));
-      } catch (err) {
-        console.error("Frontend fallback also failed:", err);
-      }
-    }
-    
     setIsTyping(false);
     
     // If backend created a new session ID, we should update our local activeConvId
