@@ -10,6 +10,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { getAIResponse } from '../utils/aiUtils';
+import { fileToBase64, fileToText } from '../utils/fileUtils';
+
 import api from '../api';
 
 const GeminiIcon = ({ className = "w-5 h-5" }) => (
@@ -18,8 +20,23 @@ const GeminiIcon = ({ className = "w-5 h-5" }) => (
   </svg>
 );
 
+const MOBILE_BREAKPOINT = 768;
+
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    const handleResize = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  return isMobile;
+};
+
 const PrivateGPTPage = () => {
-  const { user, logout } = useAuth();
+  const isMobile = useIsMobile();
+  const { user, logout, setLocalDocContents, localDocContents } = useAuth();
+
   const navigate = useNavigate();
   const isAdmin = user?.email === 'admin@regenesys.com';
   
@@ -44,7 +61,7 @@ const PrivateGPTPage = () => {
         return parsed.map(c => ({
           ...c,
           createdAt: new Date(c.createdAt),
-          messages: c.messages.map(m => ({ ...m, time: new Date(m.time) }))
+          messages: (c.messages || []).map(m => ({ ...m, time: new Date(m.time) }))
         }));
       } catch (e) {
         console.error("Failed to parse stored chats", e);
@@ -83,15 +100,15 @@ const PrivateGPTPage = () => {
   useEffect(() => {
     if (isAdmin) {
       fetchSources();
-      // Poll for status updates if any document is pending/processing
+      // Poll for status updates
       const interval = setInterval(() => {
-        if (sources.some(s => s.status === 'pending' || s.status === 'processing')) {
+        if (sources?.some(s => s.status === 'pending' || s.status === 'processing')) {
           fetchSources();
         }
       }, 3000);
       return () => clearInterval(interval);
     }
-  }, [isAdmin, sources.length]); // Re-run if count changes or on mount
+  }, [isAdmin, sources?.length]);
 
   // Persist conversations to localStorage
   useEffect(() => {
@@ -109,7 +126,7 @@ const PrivateGPTPage = () => {
   }, [notes, NOTES_KEY]);
 
   const [activeConvId, setActiveConvId] = useState(() => {
-    return conversations[0]?.id || '1';
+    return conversations?.[0]?.id || '1';
   });
   
   const [selectedNote, setSelectedNote] = useState(null);
@@ -142,55 +159,123 @@ const PrivateGPTPage = () => {
     }
   }, [toast]);
 
+  const handleOpenDocument = async (docId) => {
+    try {
+      // 1. Check if we have this document locally (Offline-First)
+      const localDoc = localDocContents?.find(d => d.id === docId);
+      if (localDoc && localDoc.base64) {
+        const byteCharacters = atob(localDoc.base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: localDoc.mimeType || 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        return;
+      }
+
+      // 2. Fallback to server if not local (using standard API instance)
+      setToast({ show: true, message: "Opening document..." });
+      const response = await api.get(`/documents/download/${docId}`, {
+        responseType: 'blob'
+      });
+      
+      const blob = new Blob([response.data], { type: response.headers['content-type'] });
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (error) {
+      console.error("Error opening document:", error);
+      setToast({ show: true, message: "Failed to open document. Server might be offline." });
+    }
+  };
+
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file || uploading) return;
 
-    if (sources.some(s => s.name === file.name)) {
-      setToast({ show: true, message: "This file is already uploaded." });
+    if (sources?.some(s => s.name === file.name)) {
+      setToast({ show: true, message: "This file is already uploaded locally." });
       e.target.value = '';
       return;
     }
 
     setUploading(true);
-    setUploadProgress(20);
+    setUploadProgress(30);
 
     try {
+      // 1. Process LOCALLY for instant AI
+      const base64 = await fileToBase64(file);
+      const text = await fileToText(file);
+      
+      const localDoc = { 
+        id: `local-${Date.now()}`, 
+        name: file.name, 
+        textContent: text, 
+        base64: base64,
+        mimeType: file.type || 'application/pdf'
+      };
+
+      setLocalDocContents(prev => [...prev, localDoc]);
+      
+      // 2. Upload to BACKEND for Database persistence
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await api.post('/documents/upload', formData, {
-        headers: {
-          'Content-Type': undefined
-        },
-        onUploadProgress: (progressEvent) => {
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          setUploadProgress(percentCompleted);
-        }
-      });
+      setToast({ show: true, message: "Syncing with database..." });
+      
+      try {
+        const response = await api.post('/documents/upload', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data'
+          },
+          onUploadProgress: (progressEvent) => {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percentCompleted);
+          }
+        });
 
-      setUploadProgress(100);
-      setTimeout(() => {
+        setUploadProgress(100);
+        setTimeout(() => {
+          setUploading(false);
+          fetchSources(); // Refresh list from backend
+          setToast({ show: true, message: "Document uploaded successfully!" });
+        }, 500);
+      } catch (err) {
+        console.error("Backend sync failed:", err);
+        const errorMsg = err.response?.data?.detail || "Server connection failed. Data kept in session only.";
+        setToast({ show: true, message: errorMsg });
         setUploading(false);
-        fetchSources(); // Refresh list from backend
-        setToast({ show: true, message: "Document uploaded successfully!" });
-      }, 500);
-    } catch (error) {
-      console.error("Upload failed:", error);
+      }
+
       setUploading(false);
-      setToast({ show: true, message: "Upload failed. Please try again." });
+      e.target.value = '';
+    } catch (error) {
+      console.error("Processing error:", error);
+      setUploading(false);
+      setToast({ show: true, message: "Failed to process file." });
     }
-    e.target.value = '';
   };
 
   const handleDeleteSource = async (id) => {
     try {
-      await api.delete(`/documents/${id}`);
-      setSources(prev => prev.filter(s => s.id !== id));
-      setToast({ show: true, message: "Document deleted." });
+      if (id.startsWith('local-')) {
+        setSources(prev => prev.filter(s => s.id !== id));
+        setLocalDocContents(prev => prev.filter(d => d.id !== id));
+      } else {
+        try {
+          await api.delete(`/documents/${id}`);
+        } catch (err) {
+          // If 404, the document is already gone from server, just proceed to remove from UI
+          if (err.response?.status !== 404) throw err;
+        }
+        fetchSources();
+      }
+      setToast({ show: true, message: "Source removed." });
     } catch (error) {
       console.error("Delete failed:", error);
-      setToast({ show: true, message: "Failed to delete document." });
+      setToast({ show: true, message: "Failed to delete from server." });
     }
   };
 
@@ -220,7 +305,7 @@ const PrivateGPTPage = () => {
 
     setConversations(prev => prev.map(c => {
       if (c.id === activeConvId) {
-        const updated = { ...c, messages: [...c.messages, userMsg] };
+        const updated = { ...c, messages: [...(c.messages || []), userMsg] };
         if (c.title === 'New Conversation') updated.title = msg.slice(0, 40) + (msg.length > 40 ? '...' : '');
         return updated;
       }
@@ -230,27 +315,41 @@ const PrivateGPTPage = () => {
     setInput('');
     setIsTyping(true);
 
-    // Call the real API
-    // Only pass session ID if it looks like a real UUID from the backend
-    const isValidUUID = activeConvId && activeConvId.length === 36;
-    const { text: response, suggestions, sessionId, citations, sources: aiSources } = await getAIResponse(msg, isValidUUID ? activeConvId : null);
-    
+    // Backend RAG call
+    let response = "I encountered an error processing your request. Please check your backend connection.";
+    let suggestions = [];
+    let session_id = null;
+    let aiSources = [];
+
+    try {
+      const isValidUUID = activeConvId?.length === 36;
+      const backendRes = await getAIResponse(msg, isValidUUID ? activeConvId : null);
+      response = backendRes.text || response;
+      suggestions = backendRes.suggestions || [];
+      session_id = backendRes.session_id || null;
+      aiSources = backendRes.sources || [];
+    } catch (err) {
+      console.error("Backend AI failed:", err);
+      response = "Backend connection failed. Please ensure the server is running on localhost:8000.";
+    }
+
     setIsTyping(false);
     
     // If backend created a new session ID, we should update our local activeConvId
     let targetConvId = activeConvId;
-    if (sessionId && sessionId !== activeConvId) {
-      setConversations(prev => prev.map(c => c.id === activeConvId ? { ...c, id: sessionId } : c));
-      setActiveConvId(sessionId);
-      targetConvId = sessionId;
+    if (session_id && session_id !== activeConvId) {
+      setConversations(prev => prev.map(c => c.id === activeConvId ? { ...c, id: session_id } : c));
+      setActiveConvId(session_id);
+      targetConvId = session_id;
     }
+
 
     setIsStreaming(true);
     setStreamingText('');
 
     // Add placeholder AI message
     const aiMsgId = Date.now().toString();
-    const formattedSources = aiSources ? aiSources.map(s => s.filename) : ['programmes.pdf'];
+    const formattedSources = aiSources ? aiSources.map(s => s.filename) : [];
     const aiMsg = { 
       role: 'ai', 
       text: '', 
@@ -258,10 +357,10 @@ const PrivateGPTPage = () => {
       time: new Date(), 
       id: aiMsgId, 
       streaming: true,
-      followUp: suggestions || []
+      followUp: [] // Fixed ReferenceError: suggestions not defined
     };
     
-    setConversations(prev => prev.map(c => c.id === targetConvId ? { ...c, messages: [...c.messages, aiMsg] } : c));
+    setConversations(prev => prev.map(c => c.id === targetConvId ? { ...c, messages: [...(c.messages || []), aiMsg] } : c));
 
     // Stream characters one by one
     let charIndex = 0;
@@ -274,10 +373,10 @@ const PrivateGPTPage = () => {
       // Update the message in conversation
       setConversations(prev => prev.map(c => {
         if (c.id !== targetConvId) return c;
-        return { ...c, messages: c.messages.map(m => m.id === aiMsgId ? { ...m, text: currentText } : m) };
+        return { ...c, messages: (c.messages || []).map(m => m.id === aiMsgId ? { ...m, text: currentText } : m) };
       }));
 
-      if (charIndex >= response.length) {
+      if (charIndex >= (response?.length || 0)) {
         clearInterval(streamRef.current);
         setIsStreaming(false);
         setStreamingText('');
@@ -338,17 +437,20 @@ const PrivateGPTPage = () => {
   };
 
   const renderMarkdown = (text) => {
+    if (!text) return null;
     return text.split('\n').map((line, i) => {
-      let rendered = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       if (line.startsWith('• ')) {
-        return <div key={i} className="pl-4 relative mb-1"><span className="absolute left-0 text-regenesys-purple">•</span><span dangerouslySetInnerHTML={{ __html: rendered.slice(2) }} /></div>;
+        const rendered = line.slice(2).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        return <div key={i} className="pl-4 relative mb-1"><span className="absolute left-0 text-regenesys-purple">•</span><span dangerouslySetInnerHTML={{ __html: rendered }} /></div>;
       }
+      const rendered = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       if (rendered.match(/^\d+\./)) {
         return <div key={i} className="pl-4 mb-1"><span dangerouslySetInnerHTML={{ __html: rendered }} /></div>;
       }
       return <div key={i} className={line === '' ? 'h-2' : 'mb-1'}><span dangerouslySetInnerHTML={{ __html: rendered }} /></div>;
     });
   };
+
 
   const suggestedQueries = [
     "What programmes are available?",
@@ -386,7 +488,7 @@ const PrivateGPTPage = () => {
               {isAdmin && (
                 <div>
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-2 mb-2">Conversations</div>
-                  {conversations.map(conv => (
+                  {conversations?.map(conv => (
                     <div
                       key={conv.id}
                       onClick={() => setActiveConvId(conv.id)}
@@ -409,12 +511,12 @@ const PrivateGPTPage = () => {
 
               {/* Saved Notes Section */}
               <div>
-                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-2 mb-2">My Saved Notes ({notes.length})</div>
-                {notes.length === 0 ? (
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-2 mb-2">My Saved Notes ({(notes?.length || 0)})</div>
+                {(!notes || notes.length === 0) ? (
                   <div className="px-2 py-4 text-[11px] text-gray-400 italic">No notes saved yet. Click "Save to note" on any AI response.</div>
                 ) : (
                   <div className="space-y-2">
-                    {notes.map(note => (
+                    {notes?.map(note => (
                       <div 
                         key={note.id} 
                         onClick={() => setSelectedNote(note)}
@@ -493,11 +595,11 @@ const PrivateGPTPage = () => {
           </div>
           
           <div className="flex items-center gap-2">
-             {isAdmin && (
-               <button onClick={() => setShowSources(!showSources)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-all text-[12px] font-semibold text-gray-500">
-                 <BookOpen size={14} /> Sources ({sources.length})
-               </button>
-             )}
+              {isAdmin && (
+                <button onClick={() => setShowSources(!showSources)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-all text-[12px] font-semibold text-gray-500">
+                  <BookOpen size={14} /> Sources ({sources?.length || 0})
+                </button>
+              )}
              {!isAdmin && (
                <button onClick={() => navigate('/')} className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-all text-[12px] font-semibold text-gray-500">
                  <ArrowLeft size={14} /> Website
@@ -659,7 +761,7 @@ const PrivateGPTPage = () => {
                   <div className="flex items-center gap-4 pr-3 pb-2">
                     {isAdmin && (
                       <span className="text-[11px] font-bold text-gray-400 whitespace-nowrap mb-1.5">
-                        {sources.length} sources
+                        {(sources?.length || 0)} sources
                       </span>
                     )}
                     <button
@@ -698,22 +800,33 @@ const PrivateGPTPage = () => {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                  {sources.map((src) => (
-                    <div key={src.id} className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 hover:shadow-sm transition-all group relative">
-                      <div className="w-9 h-9 rounded-lg bg-regenesys-purple/10 flex items-center justify-center shrink-0">
-                        <FileText size={16} className="text-regenesys-purple" />
+                  {sources.map(doc => (
+                    <div 
+                      key={doc.id} 
+                      onClick={() => handleOpenDocument(doc.id)}
+                      className="bg-white rounded-[18px] p-3 shadow-sm border border-gray-100 flex items-center justify-between group cursor-pointer hover:border-regenesys-purple/30 transition-all mb-3"
+                    >
+                      <div className="flex items-center gap-3 overflow-hidden mr-2">
+                        <div className="w-10 h-10 bg-regenesys-purple/5 rounded-lg flex items-center justify-center text-regenesys-purple shrink-0">
+                          <FileText size={20} strokeWidth={2} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-medium text-gray-700 truncate">{doc.name}</p>
+                          <p className="text-[11px] text-gray-400 flex items-center gap-2 mt-0.5">
+                            <span>{doc.type}</span>
+                            <span className="w-1 h-1 rounded-full bg-gray-200" />
+                            <span className="text-green-600 font-bold uppercase text-[9px]">Ready</span>
+                          </p>
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[12px] font-semibold text-gray-700 truncate">{src.name}</div>
-                        <div className="text-[10px] text-gray-400">{src.pages} pages · {src.type}</div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleDeleteSource(doc.id); }} 
+                          className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-red-500 transition-all rounded-lg hover:bg-red-50"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
-                      <button 
-                        onClick={() => handleDeleteSource(src.id)}
-                        className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-red-500 transition-all rounded-lg hover:bg-red-50"
-                        title="Remove source"
-                      >
-                        <Trash2 size={14} />
-                      </button>
                     </div>
                   ))}
                 </div>

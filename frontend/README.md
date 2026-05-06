@@ -1,17 +1,44 @@
-# React + Vite
+# PrivateGPT — Frontend (React + Vite)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is the React-based user interface for the PrivateGPT platform.
 
-Currently, two official plugins are available:
+## 🚀 Getting Started
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. **Install Dependencies**:
+   ```bash
+   npm install
+   ```
 
+2. **Configuration**:
+   Create a `.env` file in the `frontend` root:
+   ```env
+   VITE_API_URL=http://localhost:8000/api/v1
+   ```
 
-## React Compiler
+3. **Development Server**:
+   ```bash
+   npm run dev
+   ```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🏗️ Tech Stack
 
-## Expanding the ESLint configuration
+- **Framework**: [React](https://reactjs.org/) (with [Vite](https://vitejs.dev/))
+- **Styling**: [TailwindCSS](https://tailwindcss.com/)
+- **Animations**: [Framer Motion](https://www.framer.com/motion/)
+- **Icons**: [Lucide React](https://lucide.dev/)
+- **Routing**: [React Router](https://reactrouter.com/)
+- **API Client**: [Axios](https://axios-http.com/)
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 📁 Key Directories
+
+- `src/context/`: Authentication and Global State.
+- `src/pages/`: Main views (Login, Signup, PrivateGPT Dashboard).
+- `src/components/`: Reusable UI elements (Navbar, Modals, etc.).
+- `src/utils/`: AI utilities, file processing, and API helpers.
+
+## 🔒 Feature Highlights
+
+- **Streaming Responses**: Real-time "typing" effect for AI answers.
+- **Offline-First Previews**: Documents are processed locally for instant viewing.
+- **Note-taking**: Users can save AI responses to a persistent notebook.
+- **Responsive Design**: Fully optimized for mobile and desktop screens.

@@ -10,6 +10,12 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [aiSidebarOpen, setAiSidebarOpen] = useState(false);
+  const [localDocContents, setLocalDocContents] = useState([]); 
+
+  // Cleanup: Clear heavy docs from storage if they exist from previous sessions
+  useEffect(() => {
+    localStorage.removeItem('regenesys_local_docs');
+  }, []);
 
   // Initialize Auth State from localStorage on mount
   useEffect(() => {

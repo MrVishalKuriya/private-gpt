@@ -3,6 +3,7 @@ import { Sparkles, X, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { getAIResponse } from '../utils/aiUtils';
+import { fileToBase64, fileToText } from '../utils/fileUtils';
 
 const suggestedQueries = [
   "What programmes?",
@@ -12,6 +13,7 @@ const suggestedQueries = [
 ];
 
 const renderSimpleMarkdown = (t) => {
+  if (!t) return null;
   return t.split('\n').map((line, i) => {
     let rendered = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     if (line.startsWith('• ')) {
@@ -26,7 +28,7 @@ const Typewriter = ({ text, onComplete }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
-    if (currentIndex < text.length) {
+    if (currentIndex < (text?.length || 0)) {
       const timeout = setTimeout(() => {
         setDisplayText((prev) => prev + text[currentIndex]);
         setCurrentIndex((prev) => prev + 1);
@@ -41,7 +43,7 @@ const Typewriter = ({ text, onComplete }) => {
 };
 
 const RightSidebarAI = () => {
-  const { aiSidebarOpen, setAiSidebarOpen } = useAuth();
+  const { aiSidebarOpen, setAiSidebarOpen, localDocContents } = useAuth();
   const [messages, setMessages] = useState([
     { role: 'ai', text: "Hi! I'm Regenesys PrivateGPT. I can answer questions about our programmes, admissions, fees, course content, and career outcomes. How can I help you today?", isAnimated: true }
   ]);
@@ -55,7 +57,7 @@ const RightSidebarAI = () => {
     }
   }, [messages, isTyping]);
 
-  const handleSend = (text) => {
+  const handleSend = async (text) => {
     const msg = typeof text === 'string' ? text : input;
     if (!msg.trim() || isTyping) return;
 
@@ -64,18 +66,29 @@ const RightSidebarAI = () => {
     setInput('');
     setIsTyping(true);
 
-    // Get response from shared utility
-    const { text: aiResponse } = getAIResponse(msg);
+    try {
+      // Backend ONLY Mode
+      const response = await getAIResponse(msg);
+      const aiResponse = response.text;
 
-    // Simulate thinking delay
-    setTimeout(() => {
+      // Simulate thinking delay
+      setTimeout(() => {
+        setIsTyping(false);
+        setMessages(prev => [...prev, { 
+          role: 'ai', 
+          text: aiResponse || "I'm sorry, I couldn't generate an answer.",
+          isAnimated: false
+        }]);
+      }, 700);
+    } catch (error) {
+      console.error("SidePanel AI Error:", error);
       setIsTyping(false);
       setMessages(prev => [...prev, { 
         role: 'ai', 
-        text: aiResponse,
-        isAnimated: false
+        text: "I'm having trouble with the local AI. Please check your Gemini API key.",
+        isAnimated: true
       }]);
-    }, 1200);
+    }
   };
 
   const markAsAnimated = (index) => {
