@@ -3,7 +3,7 @@ import { Sparkles, X, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { getAIResponse } from '../utils/aiUtils';
-import { getFrontendAIResponse, fileToBase64, fileToText } from '../utils/frontendAI';
+import { fileToBase64, fileToText } from '../utils/fileUtils';
 
 const suggestedQueries = [
   "What programmes?",
@@ -67,25 +67,9 @@ const RightSidebarAI = () => {
     setIsTyping(true);
 
     try {
-      // 1. Try Backend RAG first
-      let aiResponse;
-      try {
-        const response = await getAIResponse(msg);
-        aiResponse = response.text;
-        
-        // If backend found no context, try frontend fallback if we have docs
-        const isNoAnswer = aiResponse?.includes("No relevant answer found");
-        if ((!aiResponse || isNoAnswer || aiResponse.includes("unable to connect")) && localDocContents.length > 0) {
-           throw new Error("No context");
-        }
-      } catch (e) {
-        if (localDocContents.length > 0) {
-          const frontendRes = await getFrontendAIResponse(msg, localDocContents);
-          aiResponse = frontendRes.text;
-        } else {
-          throw e;
-        }
-      }
+      // Backend ONLY Mode
+      const response = await getAIResponse(msg);
+      const aiResponse = response.text;
 
       // Simulate thinking delay
       setTimeout(() => {
@@ -95,13 +79,13 @@ const RightSidebarAI = () => {
           text: aiResponse || "I'm sorry, I couldn't generate an answer.",
           isAnimated: false
         }]);
-      }, 800);
+      }, 700);
     } catch (error) {
       console.error("SidePanel AI Error:", error);
       setIsTyping(false);
       setMessages(prev => [...prev, { 
         role: 'ai', 
-        text: "I'm having trouble connecting to the AI. Please check your connection.",
+        text: "I'm having trouble with the local AI. Please check your Gemini API key.",
         isAnimated: true
       }]);
     }

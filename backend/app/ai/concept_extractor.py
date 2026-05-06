@@ -45,7 +45,7 @@ def _get_nlp():
 
         _nlp = spacy.load("en_core_web_sm", disable=["ner"])
         logger.info("spaCy model 'en_core_web_sm' loaded for concept extraction.")
-    except OSError:
+    except (OSError, ImportError):
         logger.warning(
             "spaCy model 'en_core_web_sm' not found. "
             "Run: python -m spacy download en_core_web_sm  "

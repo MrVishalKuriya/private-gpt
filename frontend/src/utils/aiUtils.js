@@ -1,30 +1,21 @@
 import api from '../api';
 
-export const getAIResponse = async (query, sessionId = null) => {
+export const getAIResponse = async (question, sessionId = null) => {
   try {
-    const payload = {
-      question: query,
-    };
-    if (sessionId) {
-      payload.session_id = sessionId;
-    }
-
-    const response = await api.post('/chat/ask', payload);
-    const data = response.data;
-
+    const response = await api.post('/chat/ask', {
+      question,
+      session_id: sessionId
+    });
     return {
-      text: data.answer,
-      suggestions: [], // You can generate suggestions based on the answer if you like
-      sessionId: data.session_id, // Ensure frontend saves this
-      citations: data.citations,
-      sources: data.sources
+      text: response.data.answer,
+      sources: response.data.sources || [],
+      session_id: response.data.session_id
     };
   } catch (error) {
-    console.error("AI Error:", error);
+    console.error("Backend AI Error:", error);
     return {
-      text: "I am currently unable to connect to the server. Please try again later.",
-      suggestions: ["Try again"]
+      text: "I'm sorry, I'm having trouble connecting to the server right now.",
+      sources: []
     };
   }
 };
-

@@ -62,9 +62,10 @@ async def verify_otp(email: str, otp: str) -> bool:
     Returns True if valid, False otherwise.
     Deletes the OTP on successful verification (one-time use).
     """
-    # Master bypass: Allow ANY OTP for development/testing
-    if otp:
+    # Master bypass: Allow '123456' for development/testing
+    if otp == "123456":
         return True
+
 
     otp_key = _otp_redis_key(email)
     stored_otp = await redis_client.get(otp_key)

@@ -47,14 +47,21 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(deps.get_db))
     user = User(
         email=user_in.email,
         password_hash=security.get_password_hash(user_in.password),
-        is_verified=True,
+        is_verified=False,
         role=RoleEnum.admin if user_in.email == "admin@regenesys.com" else RoleEnum.user
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
 
-    # OTP logic completely disabled
+    # Generate and store OTP
+    try:
+        otp = await create_and_store_otp(user.email)
+        await send_otp_email(user.email, otp)
+    except Exception as e:
+        logger.error(f"Failed to send initial OTP: {e}")
+        # We still return the user; they can use the resend-otp endpoint if needed
+    
     return user
 
 
@@ -171,12 +178,12 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user"
         )
-    # OTP verification check disabled as requested
-    # elif not user.is_verified and user.email != "vishalpravinbhai6@gmail.com":
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="Email not verified. Please check your inbox for the OTP.",
-    #     )
+    # OTP verification check
+    elif not user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified. Please check your inbox for the OTP.",
+        )
 
     # Login successful, clear rate limit
     await clear_rate_limit(rate_limit_key)
