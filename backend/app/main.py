@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from typing import Any, cast
 
 import sentry_sdk
 from fastapi import FastAPI
@@ -53,7 +54,9 @@ async def lifespan(app: FastAPI):
 
     # Redis Ping Check
     try:
-        await redis_client.ping()
+        # We use cast to Any to satisfy the IDE's static analysis which sometimes
+        # incorrectly identifies ping() as returning a bool instead of an awaitable.
+        await cast(Any, redis_client).ping()
         logger.info("Redis connection successful.")
     except Exception as e:
         logger.error(f"Redis connection check failed: {e}")
@@ -133,7 +136,7 @@ async def health_deep_check():
 
     redis_status = "ok"
     try:
-        await redis_client.ping()
+        await cast(Any, redis_client).ping()
     except Exception:
         redis_status = "error"
 
