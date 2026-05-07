@@ -1,4 +1,4 @@
-# PrivateGPT
+# PrivateGPT 
 
 Secure enterprise-grade AI chat tool for internal knowledge bases.
 
