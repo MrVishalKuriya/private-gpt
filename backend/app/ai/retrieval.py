@@ -258,6 +258,41 @@ async def retrieve_relevant_chunks(
                     )
                 )
 
+        # ------------------------------------------------------------------ #
+        # 4. Global Fallback — if still no chunks (broad questions)
+        # ------------------------------------------------------------------ #
+        if not chunks:
+            logger.info("Broad query detected. Fetching most recent chunks for user.")
+            global_result = await session.run(
+                """
+                MATCH (c:Chunk {user_id: $user_id})
+                      <-[:HAS_CHUNK]-(:Section)
+                      <-[:HAS_SECTION]-(d:Document {user_id: $user_id})
+                RETURN c.id          AS chunk_id,
+                       c.content     AS content,
+                       c.page_number AS page_number,
+                       c.section     AS section,
+                       d.id          AS document_id,
+                       d.filename    AS filename
+                ORDER BY d.created_at DESC, c.id ASC
+                LIMIT $limit
+                """,
+                user_id=user_id,
+                limit=limit,
+            )
+            gb_records = await global_result.data()
+            for rec in gb_records:
+                chunks.append(
+                    RetrievedChunk(
+                        document_id=rec["document_id"],
+                        filename=rec["filename"],
+                        content=rec["content"],
+                        page_number=rec["page_number"],
+                        section=rec["section"],
+                        relevance_score=0.1,  # lowest priority
+                    )
+                )
+
     # Sort descending by relevance and return top-limit results
     chunks.sort(key=lambda x: x.relevance_score, reverse=True)
     logger.info("Retrieved %d chunks for query.", min(len(chunks), limit))
