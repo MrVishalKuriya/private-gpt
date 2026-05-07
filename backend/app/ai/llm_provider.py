@@ -141,7 +141,7 @@ class BedrockProvider(LLMProvider):
 
         from app.core.config import settings
 
-        self._model = settings.LLM_MODEL or "anthropic.claude-3-5-sonnet-20241022-v2:0"
+        self._model = settings.LLM_MODEL or "us.anthropic.claude-sonnet-4-6"
         self._max_tokens = settings.BEDROCK_MAX_TOKENS
         self._api_key = settings.BEDROCK_API_KEY
         self._region = settings.AWS_REGION or "us-east-1"

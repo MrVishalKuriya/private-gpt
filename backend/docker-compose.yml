@@ -30,6 +30,12 @@ services:
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "neo4j_password", "RETURN 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
 
   api:
     build: .
@@ -49,9 +55,12 @@ services:
     env_file:
       - .env
     depends_on:
-      - db
-      - redis
-      - neo4j
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+      neo4j:
+        condition: service_healthy
 
   worker:
     build: .
@@ -69,9 +78,12 @@ services:
     env_file:
       - .env
     depends_on:
-      - db
-      - redis
-      - neo4j
+      db:
+        condition: service_started
+      redis:
+        condition: service_started
+      neo4j:
+        condition: service_healthy
 
 volumes:
   postgres_data:
