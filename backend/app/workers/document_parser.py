@@ -33,7 +33,7 @@ def perform_gemini_ocr(image_bytes: bytes) -> str:
     try:
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
         response = client.models.generate_content(
-            model="gemini-2.5-pro",
+            model="gemini-1.5-flash",
             contents=[
                 types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
                 OCR_PROMPT,

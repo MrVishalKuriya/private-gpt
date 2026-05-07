@@ -141,7 +141,9 @@ export const AuthProvider = ({ children }) => {
       setAiSidebarOpen, 
       checkEmail,
       requestOTP,
-      verifyOTP
+      verifyOTP,
+      localDocContents,
+      setLocalDocContents
     }}>
       {children}
     </AuthContext.Provider>

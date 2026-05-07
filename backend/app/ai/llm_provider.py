@@ -82,7 +82,7 @@ class GeminiProvider(LLMProvider):
                 "LLM_PROVIDER is set to 'gemini' but GEMINI_API_KEY is empty."
             )
         self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        self._model = settings.LLM_MODEL or "gemini-2.5-pro"
+        self._model = settings.LLM_MODEL or "gemini-1.5-flash"
         logger.info("GeminiProvider initialised (model=%s)", self._model)
 
     @property

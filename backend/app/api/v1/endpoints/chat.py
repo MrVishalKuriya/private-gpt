@@ -165,12 +165,13 @@ async def ask_question_stream(
 
         # Save assistant message on completion via a new session context
         async with AsyncSessionLocal() as session_db:
+            from app.ai.llm_provider import get_llm_provider
             assistant_msg = ChatMessage(
                 session_id=session.id,
                 role=RoleType.assistant,
                 content=full_text,
                 citations=citations,
-                model_used="gemini-2.5-pro",
+                model_used=get_llm_provider().model_name,
             )
             session_db.add(assistant_msg)
             await session_db.commit()
