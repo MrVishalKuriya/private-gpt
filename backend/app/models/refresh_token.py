@@ -6,6 +6,7 @@ from sqlalchemy.orm import relationship
 
 from app.db.base_class import Base
 from app.models.mixins import TimestampMixin
+from app.models.user import User
 
 
 class RefreshToken(TimestampMixin, Base):

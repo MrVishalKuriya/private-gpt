@@ -17,8 +17,10 @@ from app.schemas.user import (
     OTPResendRequest,
     OTPVerifyRequest,
     UserCreate,
+    UserResponse,
 )
 from app.services.otp_service import create_and_store_otp, send_otp_email, verify_otp
+from app.models.user import RoleEnum
 
 router = APIRouter()
 
@@ -43,7 +45,6 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(deps.get_db))
             status_code=400,
             detail="The user with this email already exists in the system.",
         )
-    from app.models.user import RoleEnum
     user = User(
         email=user_in.email,
         password_hash=security.get_password_hash(user_in.password),
@@ -54,7 +55,6 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(deps.get_db))
     await db.commit()
     await db.refresh(user)
 
-    # OTP logic completely disabled
     return user
 
 
@@ -161,8 +161,6 @@ async def login(
             detail="Incorrect email or password",
         )
     
-    # Auto-upgrade admin@regenesys.com to Admin role
-    from app.models.user import RoleEnum
     if user.email == "admin@regenesys.com" and user.role != RoleEnum.admin:
         user.role = RoleEnum.admin
         await db.commit()

@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.ai.chat import generate_rag_answer, generate_rag_answer_stream
 from app.ai.retrieval import retrieve_relevant_chunks
 from app.api import deps
+from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models.chat import ChatMessage, ChatSession, RoleType
 from app.models.user import User
@@ -66,7 +67,7 @@ async def ask_question(
 
     sources = [
         SourceDetail(
-            document_id=UUID(str(chunk.document_id)),
+            document_id=chunk.document_id if isinstance(chunk.document_id, UUID) else UUID(str(chunk.document_id)),
             filename=chunk.filename,
             page_number=chunk.page_number,
             content_snippet=chunk.content[:200],
@@ -143,7 +144,7 @@ async def ask_question_stream(
 
     sources = [
         SourceDetail(
-            document_id=UUID(chunk.document_id),
+            document_id=chunk.document_id if isinstance(chunk.document_id, UUID) else UUID(str(chunk.document_id)),
             filename=chunk.filename,
             page_number=chunk.page_number,
             content_snippet=chunk.content[:200],
